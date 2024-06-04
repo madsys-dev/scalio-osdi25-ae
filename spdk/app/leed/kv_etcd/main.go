@@ -14,7 +14,7 @@ import (
 	"time"
 	"unsafe"
 
-	"go.etcd.io/etcd/api/v3/mvccpb"
+	"go.etcd.io/etcd/api/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
