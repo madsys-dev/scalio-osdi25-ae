@@ -367,6 +367,29 @@ void kv_value_log_write(struct kv_value_log *self, uint64_t bucket_id, uint8_t *
     compact(self);
 }
 
+//--- buffered ---
+void kv_value_log_buffered_offset(struct kv_value_log *self, uint32_t *value_length, uint64_t *value_offset,
+                                  uint32_t buffer_size) {
+    uint64_t offset = self->log.tail << self->blk_shift;
+    for (uint32_t i = 0; i < buffer_size; ++i) {
+        value_offset[i] = offset;
+        offset += value_length[i];
+        assert(offset >> self->blk_shift == self->log.tail);
+    }
+}
+
+void kv_value_log_buffered_write(struct kv_value_log *self, uint64_t *value_offset, uint64_t *bucket_id,
+                                 uint8_t *value, uint32_t *value_length, uint32_t buffer_size,
+                                 kv_circular_log_io_cb cb, void *cb_arg) {
+    uint32_t total_value_length = 0;
+    for (uint32_t i = 0; i < buffer_size; ++i) {
+        append_bucket_id(self, value_offset[i], bucket_id[i]);
+        total_value_length += value_length[i];
+    }
+    kv_circular_log_append(&self->log, value, align(self, total_value_length), cb, cb_arg);
+    compact(self);
+}
+
 // --- init & fini ---
 void kv_value_log_init(struct kv_value_log *self, struct kv_storage *storage, struct kv_bucket_log *bucket_log, uint64_t base,
                        uint64_t size, uint32_t index_buf_len) {

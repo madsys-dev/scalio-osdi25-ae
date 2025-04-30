@@ -1,0 +1,65 @@
+{
+  "subsystems": [
+    {
+      "subsystem": "bdev",
+      "config": [
+        {
+          "params": {
+            "name": "aio0",
+            "filename": "/dev/nvme0n1",
+            "block_size": 512
+          },
+          "method": "bdev_aio_create"
+        },
+        {
+          "params": {
+            "name": "aio1",
+            "filename": "/dev/nvme1n1",
+            "block_size": 512
+          },
+          "method": "bdev_aio_create"
+        },
+        {
+          "params": {
+            "name": "aio2",
+            "filename": "/dev/nvme2n1",
+            "block_size": 512
+          },
+          "method": "bdev_aio_create"
+        },
+        {
+          "params": {
+            "name": "aio3",
+            "filename": "/dev/nvme3n1",
+            "block_size": 512
+          },
+          "method": "bdev_aio_create"
+        },
+        {
+          "params": {
+            "name": "aio4",
+            "filename": "/dev/nvme4n1",
+            "block_size": 512
+          },
+          "method": "bdev_aio_create"
+        },
+        {
+          "params": {
+            "name": "aio5",
+            "filename": "/dev/nvme5n1",
+            "block_size": 512
+          },
+          "method": "bdev_aio_create"
+        },
+        {
+          "params": {
+            "name": "aio6",
+            "filename": "/dev/nvme6n1",
+            "block_size": 512
+          },
+          "method": "bdev_aio_create"
+        }
+      ]
+    }
+  ]
+}

@@ -362,7 +362,7 @@ running_default_opt = {
 
 hash_table_opt = {
     'hash_bucket_assoc': '8',
-    'hash_bucket_num': '17170432'
+    'hash_bucket_num': '280576'
 }
 
 default_method_opt_dict = {

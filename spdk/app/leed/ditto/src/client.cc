@@ -23,8 +23,6 @@ DMCClient::DMCClient(const DMCConfig* conf) {
   num_samples_ = conf->num_samples;
   server_oom_ = false;
   block_size_ = conf->block_size;
-  log_f_ = fopen("op_log.log", "w");
-  assert(log_f_ != NULL);
 
   // counters
   clear_counters();
@@ -2977,3 +2975,173 @@ void DMCClient::get_expert_reward_cnt(std::vector<uint32_t>& reward_cnt) {
   reward_cnt = expert_reward_cnt_;
 }
 #endif
+
+PackedClient::PackedClient(const DMCConfig* conf) {
+    num_servers_ = conf->memory_num;
+    server_base_addr_ = conf->server_base_addr;
+    eviction_type_ = conf->eviction_type;
+    priority_type_ = conf->eviction_priority;
+
+    local_buf_size_ = conf->client_local_size;
+    local_buf_ = malloc(local_buf_size_);
+    assert(local_buf_ != NULL);
+
+    nm_ = new UDPNetworkManager(conf);
+    hash_ = dmc_new_hash(conf->hash_type);
+    assert(hash_ != NULL);
+
+    int ret = connect_all_rc_qp();
+    assert(ret == 0);
+
+    // allocate local mr
+    struct ibv_pd* pd = nm_->get_ib_pd();
+    local_buf_mr_ =
+            ibv_reg_mr(pd, local_buf_, local_buf_size_,
+                       IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ |
+                       IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_ATOMIC);
+    assert(local_buf_mr_ != NULL);
+}
+
+PackedClient::~PackedClient() {
+    delete nm_;
+}
+
+int PackedClient::kv_get(void* key,
+                         uint32_t key_size,
+                         __OUT void* val,
+                         __OUT uint32_t* val_size) {
+    char key_buf[256] = {0};
+    memcpy(key_buf, key, key_size);
+    printd(L_DEBUG, "get %s", key_buf);
+
+    uint64_t key_hash = hash_->hash_func1(key, key_size);
+    uint64_t bucket_id = key_hash % PACKED_HASH_NUM_BUCKETS;
+    uint64_t init_bucket_raddr = bucket_id * sizeof(PackedBucket) + server_base_addr_;
+
+    // construct rdma read bucket request
+    struct ibv_send_wr read_bucket_wr;
+    struct ibv_sge read_bucket_sge;
+    memset(&read_bucket_wr, 0, sizeof(struct ibv_send_wr));
+    ib_create_sge((uint64_t)local_buf_, local_buf_mr_->lkey, sizeof(PackedBucket),
+                  &read_bucket_sge);
+    read_bucket_wr.wr_id = 12301;
+    read_bucket_wr.next = NULL;
+    read_bucket_wr.sg_list = &read_bucket_sge;
+    read_bucket_wr.num_sge = 1;
+    read_bucket_wr.opcode = IBV_WR_RDMA_READ;
+    read_bucket_wr.send_flags = IBV_SEND_SIGNALED;
+    read_bucket_wr.wr.rdma.remote_addr = init_bucket_raddr;
+    read_bucket_wr.wr.rdma.rkey = server_rkey_map_[0];
+    int ret = nm_->rdma_post_send_sid_sync(&read_bucket_wr, 0);
+    assert(ret == 0);
+    PackedSlot* slot = (PackedSlot *) local_buf_;
+    for (int i = 0; i < PACKED_HASH_BUCKET_ASSOC_NUM; ++i, ++slot) {
+        if (slot->visibility && memcmp(key_buf, reinterpret_cast<char *>(slot->key), key_size) == 0) {
+            if (!slot->integrity) {
+                return -2;
+            }
+            memcpy(val, slot->value, PACKED_VALUE_LEN);
+            *val_size = PACKED_VALUE_LEN;
+
+            if (eviction_type_ == EVICT_NON) {
+                return 0;
+            }
+
+            // construct rdma update meta request
+            struct ibv_send_wr update_meta_wr;
+            struct ibv_sge update_meta_sge;
+            memset(&update_meta_wr, 0, sizeof(struct ibv_send_wr));
+            memset(local_buf_, 0, sizeof(PackedSlot));
+            (*(PackedSlot *)local_buf_).acc_ts = new_ts();
+            ib_create_sge((uint64_t) &(*(PackedSlot *)local_buf_).acc_ts, local_buf_mr_->lkey, sizeof(uint64_t),
+                          &update_meta_sge);
+            update_meta_wr.wr_id = 115511;
+            update_meta_wr.next = NULL;
+            update_meta_wr.sg_list = &update_meta_sge;
+            update_meta_wr.num_sge = 1;
+            update_meta_wr.opcode = IBV_WR_RDMA_WRITE;
+            update_meta_wr.send_flags = IBV_SEND_SIGNALED;
+            update_meta_wr.wr.rdma.remote_addr = init_bucket_raddr + i * sizeof(PackedSlot) + PACKED_SLOT_ACC_TS_OFF;
+            update_meta_wr.wr.rdma.rkey = server_rkey_map_[0];
+            ret = nm_->rdma_post_send_sid_sync(&update_meta_wr, 0);
+            assert(ret == 0);
+            return 0;
+        }
+    }
+    return -1;
+}
+
+int PackedClient::kv_set(void* key,
+                         uint32_t key_size,
+                         void* val,
+                         uint32_t val_size,
+                         uint8_t slot_id) {
+    int ret = 0;
+
+    uint64_t key_hash = hash_->hash_func1(key, key_size);
+    uint64_t bucket_id = key_hash % PACKED_HASH_NUM_BUCKETS;
+
+    // write KV
+    struct ibv_send_wr write_integrity_sr;
+    struct ibv_sge write_integrity_sge;
+    memset(&write_integrity_sr, 0, sizeof(struct ibv_send_wr));
+    memset(local_buf_, 0, sizeof(PackedSlot));
+    (*(PackedSlot *)local_buf_).integrity = 1;
+    memcpy((*(PackedSlot *)local_buf_).value, val, val_size);
+    ib_create_sge((uint64_t) local_buf_ + PACKED_SLOT_INTEGRITY_OFF, local_buf_mr_->lkey, sizeof(uint8_t),
+                  &write_integrity_sge);
+    write_integrity_sr.wr_id = 0;
+    write_integrity_sr.next = NULL;
+    write_integrity_sr.sg_list = &write_integrity_sge;
+    write_integrity_sr.num_sge = 1;
+    write_integrity_sr.opcode = IBV_WR_RDMA_WRITE;
+    write_integrity_sr.send_flags = IBV_SEND_SIGNALED;
+    write_integrity_sr.wr.rdma.remote_addr = bucket_id * sizeof(PackedBucket) + slot_id * sizeof(PackedSlot) + PACKED_SLOT_INTEGRITY_OFF + server_base_addr_;
+    write_integrity_sr.wr.rdma.rkey = server_rkey_map_[0];
+
+    struct ibv_send_wr update_meta_wr;
+    struct ibv_sge update_meta_sge;
+    memset(&update_meta_wr, 0, sizeof(struct ibv_send_wr));
+    if (eviction_type_ != EVICT_NON) {
+        (*(PackedSlot *)local_buf_).acc_ts = new_ts();
+        ib_create_sge((uint64_t) local_buf_ + PACKED_SLOT_ACC_TS_OFF, local_buf_mr_->lkey, sizeof(uint64_t),
+                      &update_meta_sge);
+        update_meta_wr.wr_id = 115511;
+        update_meta_wr.next = &write_integrity_sr;
+        update_meta_wr.sg_list = &update_meta_sge;
+        update_meta_wr.num_sge = 1;
+        update_meta_wr.opcode = IBV_WR_RDMA_WRITE;
+        update_meta_wr.send_flags = 0;
+        update_meta_wr.wr.rdma.remote_addr = bucket_id * sizeof(PackedBucket) + slot_id * sizeof(PackedSlot) + PACKED_SLOT_ACC_TS_OFF + server_base_addr_;
+        update_meta_wr.wr.rdma.rkey = server_rkey_map_[0];
+    }
+
+    struct ibv_send_wr write_value_sr;
+    struct ibv_sge write_value_sge;
+    ib_create_sge((uint64_t) local_buf_ + PACKED_SLOT_VALUE_OFF, local_buf_mr_->lkey, sizeof(uint8_t[PACKED_VALUE_LEN]),
+                  &write_value_sge);
+    write_value_sr.wr_id = 0;
+    write_value_sr.next = eviction_type_ == EVICT_NON ? &write_integrity_sr : &update_meta_wr;
+    write_value_sr.sg_list = &write_value_sge;
+    write_value_sr.num_sge = 1;
+    write_value_sr.opcode = IBV_WR_RDMA_WRITE;
+    write_value_sr.send_flags = 0;
+    write_value_sr.wr.rdma.remote_addr = bucket_id * sizeof(PackedBucket) + slot_id * sizeof(PackedSlot) + PACKED_SLOT_VALUE_OFF + server_base_addr_;
+    write_value_sr.wr.rdma.rkey = server_rkey_map_[0];
+
+    ret = nm_->rdma_post_send_sid_sync(&write_value_sr, 0);
+    assert(ret == 0);
+
+    return ret;
+}
+
+int PackedClient::connect_all_rc_qp() {
+    int ret;
+    for (int i = 0; i < num_servers_; i++) {
+        MrInfo mr;
+        ret = nm_->client_connect_one_rc_qp(i, &mr);
+        assert(ret == 0);
+        server_rkey_map_[i] = mr.rkey;
+    }
+    return 0;
+}

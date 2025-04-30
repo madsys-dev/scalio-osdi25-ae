@@ -7,6 +7,8 @@
 #define KV_MAX_KEY_LENGTH 20
 #define KV_MIN_KEY_LENGTH 8
 #define KV_ITEM_PER_BUCKET 16
+#define KV_BLK_SIZE 512
+#define KV_NUM_ITEMS 100000000
 
 typedef void (*kv_task_cb)(void *);
 typedef void *kv_bucket_key_set;
@@ -67,7 +69,7 @@ bool kv_bucket_alloc_extra(struct kv_bucket_log *self, struct kv_bucket_segment 
 void kv_bucket_free_extra(struct kv_bucket_segment *seg);
 
 void kv_bucket_seg_init(struct kv_bucket_segment *seg, uint64_t bucket_id);
-void kv_bucket_seg_get(struct kv_bucket_log *self, struct kv_bucket_segment *seg, bool strict, kv_circular_log_io_cb cb, void *cb_arg);
+void kv_bucket_seg_get(struct kv_bucket_log *self, struct kv_bucket_segment *seg, struct kv_bucket_meta *meta_ptr, bool strict, kv_circular_log_io_cb cb, void *cb_arg);
 void kv_bucket_seg_put(struct kv_bucket_log *self, struct kv_bucket_segment *seg, kv_circular_log_io_cb cb, void *cb_arg);
 void kv_bucket_seg_put_bulk(struct kv_bucket_log *self, struct kv_bucket_segments *segs, kv_circular_log_io_cb cb, void *cb_arg);
 void kv_bucket_seg_cleanup(struct kv_bucket_log *self, struct kv_bucket_segment *seg);

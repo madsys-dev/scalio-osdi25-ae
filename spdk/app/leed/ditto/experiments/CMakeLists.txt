@@ -3,8 +3,6 @@ add_executable(simulator simulator.cc workload.cc)
 
 # add_executable(ada_simulator adaptive_simulator.cc workload.cc)
 add_executable(compile_opt_checker compile_opt_checker.cc)
-add_executable(redis_perf redis_test/redis_perf.cc memcached.cc)
-add_executable(redis_perf_tpt redis_test/redis_perf_tpt.cc memcached.cc)
 
 target_link_libraries(
     init
@@ -16,22 +14,6 @@ target_link_libraries(
 target_link_libraries(
     simulator
     libdmc
-    pthread
-    memcached
-)
-
-target_link_libraries(
-    redis_perf
-    redis++
-    hiredis
-    pthread
-    memcached
-)
-
-target_link_libraries(
-    redis_perf_tpt
-    redis++
-    hiredis
     pthread
     memcached
 )

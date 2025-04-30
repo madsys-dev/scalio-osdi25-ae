@@ -626,18 +626,58 @@ def control_workload_bench(controller: DMCMemcachedController):
     res_dict = controller.gather_client_results()
 
     # merge hit rate and continuous hit rate
+    max_n_ops_cont = max(len(res_dict[i]['n_ops_cont']) for i in range(1, controller.num_clients + 1))
+    max_n_evict_cont = max(len(res_dict[i]['n_evict_cont']) for i in range(1, controller.num_clients + 1))
+    max_n_succ_evict_cont = max(len(res_dict[i]['n_succ_evict_cont']) for i in range(1, controller.num_clients + 1))
+    max_n_evict_bucket_cont = max(len(res_dict[i]['n_evict_bucket_cont']) for i in range(1, controller.num_clients + 1))
+    max_n_succ_evict_bucket_cont = max(len(res_dict[i]['n_succ_evict_bucket_cont']) for i in range(1, controller.num_clients + 1))
+    max_n_miss_cont = max(len(res_dict[i]['n_miss_cont']) for i in range(1, controller.num_clients + 1))
+    max_len = max(max_n_ops_cont, max_n_evict_cont, max_n_succ_evict_cont, max_n_evict_bucket_cont, max_n_succ_evict_bucket_cont, max_n_miss_cont)
+    for i in range(1, controller.num_clients + 1):
+        res_dict[i]['n_ops_cont'].extend([res_dict[i]['n_ops_cont'][-1], ] * (max_len - len(res_dict[i]['n_ops_cont'])))
+        res_dict[i]['n_evict_cont'].extend([res_dict[i]['n_evict_cont'][-1], ] * (max_len - len(res_dict[i]['n_evict_cont'])))
+        res_dict[i]['n_succ_evict_cont'].extend([res_dict[i]['n_succ_evict_cont'][-1], ] * (max_len - len(res_dict[i]['n_succ_evict_cont'])))
+        res_dict[i]['n_evict_bucket_cont'].extend([res_dict[i]['n_evict_bucket_cont'][-1], ] * (max_len - len(res_dict[i]['n_evict_bucket_cont'])))
+        res_dict[i]['n_succ_evict_bucket_cont'].extend([res_dict[i]['n_succ_evict_bucket_cont'][-1], ] * (max_len - len(res_dict[i]['n_succ_evict_bucket_cont'])))
+        res_dict[i]['n_miss_cont'].extend([res_dict[i]['n_miss_cont'][-1], ] * (max_len - len(res_dict[i]['n_miss_cont'])))
+        res_dict[i]['adaptive_weights_cont'].extend([res_dict[i]['adaptive_weights_cont'][-1], ] * (max_len - len(res_dict[i]['adaptive_weights_cont'])))
     agg_ops = np.zeros(len(res_dict[1]['n_ops_cont']))
+    agg_evict = np.zeros(len(res_dict[1]['n_evict_cont']))
+    agg_succ_evict = np.zeros(len(res_dict[1]['n_succ_evict_cont']))
+    agg_evict_bucket = np.zeros(len(res_dict[1]['n_evict_bucket_cont']))
+    agg_succ_evict_bucket = np.zeros(len(res_dict[1]['n_succ_evict_bucket_cont']))
     agg_miss = np.zeros(len(res_dict[1]['n_miss_cont']))
     agg_weight = np.zeros_like(
         np.array(res_dict[1]['adaptive_weights_cont']), dtype=np.float64)
     num_hist_match = []
     num_weight_adjust = []
+    merged_map = {}
+    n_get = 0
+    n_set = 0
     for i in range(1, controller.num_clients + 1):
         agg_ops += np.array(res_dict[i]['n_ops_cont'])
+        agg_evict += np.array(res_dict[i]['n_evict_cont'])
+        agg_succ_evict += np.array(res_dict[i]['n_succ_evict_cont'])
+        agg_evict_bucket += np.array(res_dict[i]['n_evict_bucket_cont'])
+        agg_succ_evict_bucket += np.array(res_dict[i]['n_succ_evict_bucket_cont'])
         agg_miss += np.array(res_dict[i]['n_miss_cont'])
         agg_weight += np.array(res_dict[i]['adaptive_weights_cont'])
         num_hist_match.append(res_dict[i]['n_hist_match'])
         num_weight_adjust.append(res_dict[i]['n_weights_adjust'])
+        n_get += res_dict[i]['n_get']
+        n_set += res_dict[i]['n_set']
+        cur_map = res_dict[i]['lat_map']
+        for ent in cur_map:
+            if ent[0] not in merged_map:
+                merged_map[ent[0]] = 0
+            merged_map[ent[0]] += ent[1]
+    key_list = list(merged_map.keys())
+    key_list.sort()
+    lat_list = []
+    for k in key_list:
+        lat_list += [k] * merged_map[k]
+    for i in range(1, len(lat_list)):
+        assert (lat_list[i - 1] <= lat_list[i])
     sft_ops = np.array([0] + list(agg_ops)[:-1])
     sft_miss = np.array([0] + list(agg_miss)[:-1])
     tpt = (agg_ops - sft_ops) / 0.5
@@ -658,6 +698,18 @@ def control_workload_bench(controller: DMCMemcachedController):
     # print('tpt:', combined_dict['tpt_overall'])
     json_res = {
         'tpt': combined_dict['tpt_overall'],
+        'n_get': n_get,
+        'n_set': n_set,
+        'agg_miss': agg_miss[-1],
+        'agg_ops': agg_ops[-1],
+        'agg_evict': agg_evict[-1],
+        'agg_succ_evict': agg_succ_evict[-1],
+        'agg_evict_bucket': agg_evict_bucket[-1],
+        'agg_succ_evict_bucket': agg_succ_evict_bucket[-1],
+        'p50': lat_list[int(len(lat_list) * 0.5)],
+        'p90': lat_list[int(len(lat_list) * 0.9)],
+        'p99': lat_list[int(len(lat_list) * 0.99)],
+        'p999': lat_list[int(len(lat_list) * 0.999)],
         'hr': combined_dict['hr_overall']
     }
     print(json.dumps(json_res))
@@ -835,8 +887,8 @@ if __name__ == '__main__':
                 res = control_ycsb_bench(controller, args.num_clients)
 
     # stop the server and get server results
-    server_res = stop_and_get_server_stats(controller)
-    res['server'] = server_res
+    # server_res = stop_and_get_server_stats(controller)
+    # res['server'] = server_res
 
     with open("{}-{}-s{}-c{}.json".format(args.workload, args.out_fname, args.num_servers, args.num_clients), 'w') as f:
         json.dump(res, f)

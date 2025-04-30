@@ -42,7 +42,7 @@ static void test_cb(bool success, void *cb_arg) {
             if (--io_cnt) return;
             state = GET0;
             kv_memset(value[0], 0, 5 * storage.block_size);
-            kv_data_store_get(&data_store, key[0], 8, value[0], &value_length, test_cb, NULL);
+            kv_data_store_get(&data_store, key[0], 8, value[0], &value_length, NULL, test_cb, NULL);
             break;
         case GET0:
             puts(value[0]);

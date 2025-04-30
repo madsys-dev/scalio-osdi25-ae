@@ -1,0 +1,86 @@
+{
+  "subsystems": [
+    {
+      "subsystem": "bdev",
+      "config": [
+        {
+          "params": {
+            "trtype": "rdma",
+            "name": "NVMe0",
+            "traddr": "10.3.4.6",
+            "adrfam": "ipv4",
+            "trsvcid": "4420",
+            "subnqn": "nvme-4-6-0"
+          },
+          "method": "bdev_nvme_attach_controller"
+        },
+        {
+          "params": {
+            "trtype": "rdma",
+            "name": "NVMe1",
+            "traddr": "10.3.4.6",
+            "adrfam": "ipv4",
+            "trsvcid": "4421",
+            "subnqn": "nvme-4-6-1"
+          },
+          "method": "bdev_nvme_attach_controller"
+        },
+        {
+          "params": {
+            "trtype": "rdma",
+            "name": "NVMe2",
+            "traddr": "10.3.4.6",
+            "adrfam": "ipv4",
+            "trsvcid": "4422",
+            "subnqn": "nvme-4-6-2"
+          },
+          "method": "bdev_nvme_attach_controller"
+        },
+        {
+          "params": {
+            "trtype": "rdma",
+            "name": "NVMe3",
+            "traddr": "10.3.4.6",
+            "adrfam": "ipv4",
+            "trsvcid": "4423",
+            "subnqn": "nvme-4-6-3"
+          },
+          "method": "bdev_nvme_attach_controller"
+        },
+        {
+          "params": {
+            "trtype": "rdma",
+            "name": "NVMe4",
+            "traddr": "10.3.4.6",
+            "adrfam": "ipv4",
+            "trsvcid": "4424",
+            "subnqn": "nvme-4-6-4"
+          },
+          "method": "bdev_nvme_attach_controller"
+        },
+        {
+          "params": {
+            "trtype": "rdma",
+            "name": "NVMe5",
+            "traddr": "10.3.4.6",
+            "adrfam": "ipv4",
+            "trsvcid": "4425",
+            "subnqn": "nvme-4-6-5"
+          },
+          "method": "bdev_nvme_attach_controller"
+        },
+        {
+          "params": {
+            "trtype": "rdma",
+            "name": "NVMe6",
+            "traddr": "10.3.4.6",
+            "adrfam": "ipv4",
+            "trsvcid": "4426",
+            "subnqn": "nvme-4-6-6"
+          },
+          "method": "bdev_nvme_attach_controller"
+        }
+      ]
+    }
+  ]
+}

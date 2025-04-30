@@ -11,3 +11,6 @@ experiments/workloads/ibm*
 experiments/workloads/cphy*
 scripts/install/*
 *__pycache__
+*.d
+*.o
+*.json

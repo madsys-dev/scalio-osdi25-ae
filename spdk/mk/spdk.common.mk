@@ -234,7 +234,7 @@ MAKEFLAGS += --no-print-directory
 C_SRCS += $(C_SRCS-y)
 CXX_SRCS += $(CXX_SRCS-y)
 
-OBJS = $(C_SRCS:.c=.o) $(CXX_SRCS:.cpp=.o)
+OBJS = $(C_SRCS:.c=.o) $(patsubst %.cc,%.o,$(patsubst %.cpp,%.o,$(CXX_SRCS)))
 
 DEPFLAGS = -MMD -MP -MF $*.d.tmp
 
@@ -369,6 +369,9 @@ UNINSTALL_HEADER=\
 	$(COMPILE_C)
 
 %.o: %.cpp %.d $(MAKEFILE_LIST)
+	$(COMPILE_CXX)
+
+%.o: %.cc %.d $(MAKEFILE_LIST)
 	$(COMPILE_CXX)
 
 %.d: ;

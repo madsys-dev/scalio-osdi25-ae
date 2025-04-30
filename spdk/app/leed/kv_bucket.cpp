@@ -142,7 +142,7 @@ static bool try_lock(struct kv_bucket_log *self, struct lock_ctx *ctx) {
             }
         } else {
             lock->segments[seg->bucket_id] = {seg, ctx};
-            kv_bucket_seg_get(self, seg, false, lock_get_seg_cb, &lock->segments[seg->bucket_id]);
+            kv_bucket_seg_get(self, seg, nullptr, false, lock_get_seg_cb, &lock->segments[seg->bucket_id]);
         }
     }
     return true;
@@ -158,7 +158,7 @@ void kv_bucket_lock(struct kv_bucket_log *self, struct kv_bucket_segments *segs,
             if (lock->segments.find(seg->bucket_id) == lock->segments.end()) {
                 // prefetch the bucket segment
                 lock->segments[seg->bucket_id] = {seg, nullptr};
-                kv_bucket_seg_get(self, seg, false, lock_get_seg_cb, &lock->segments[seg->bucket_id]);
+                kv_bucket_seg_get(self, seg, nullptr, false, lock_get_seg_cb, &lock->segments[seg->bucket_id]);
             }
         }
     }

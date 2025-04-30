@@ -18,8 +18,9 @@ insertproportion=0
 readmodifywriteproportion=0.5
 
 requestdistribution=zipfian
+zipfianconstant=0.99
 
 recordcount=20000000
 operationcount=8000000
-fieldlength=1024
+fieldlength=64
 

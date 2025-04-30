@@ -18,6 +18,7 @@
 #include "freq_cache.h"
 #include "lw_history.h"
 #include "nm.h"
+#include "packed_data_struct.h"
 #include "priority.h"
 #include "rlist.h"
 
@@ -357,6 +358,38 @@ class DMCClient {
   inline uint8_t get_evict_type() { return eviction_type_; }
 
   inline void scale_memory() { server_oom_ = false; }
+};
+
+class PackedClient {
+    uint16_t num_servers_;
+    uint64_t server_base_addr_;
+
+    uint32_t local_buf_size_;
+    void* local_buf_;
+    struct ibv_mr* local_buf_mr_;
+
+    UDPNetworkManager* nm_;
+    DMCHash* hash_;
+
+    uint8_t eviction_type_;
+    uint8_t priority_type_;
+
+    std::map<uint16_t, uint32_t> server_rkey_map_;
+
+    int connect_all_rc_qp();
+
+public:
+
+    PackedClient(const DMCConfig* conf);
+
+    ~PackedClient();
+
+    int kv_get(void* key,
+               uint32_t key_size,
+               __OUT void* val,
+               __OUT uint32_t* val_size);
+    int kv_set(void* key, uint32_t key_size, void* val, uint32_t val_size, uint8_t slot_id);
+
 };
 
 #endif

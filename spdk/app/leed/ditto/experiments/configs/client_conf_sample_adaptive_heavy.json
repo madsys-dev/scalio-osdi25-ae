@@ -5,7 +5,7 @@
  "udp_port": 2333,
  "memory_num": 1,
  "memory_ip_list": [
-  "10.176.37.64"
+  "10.1.4.6"
  ],
  "ib_dev_id": 0,
  "ib_port_id": 1,

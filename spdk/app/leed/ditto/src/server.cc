@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <sys/mman.h>
 #include <sys/time.h>
 
 #include "debug.h"
@@ -12,6 +13,9 @@
 
 #include <algorithm>
 #include <vector>
+
+#define MAP_HUGE_2MB (21 << MAP_HUGE_SHIFT)
+#define MAP_HUGE_1GB (30 << MAP_HUGE_SHIFT)
 
 void* server_main(void* server_main_args) {
   ServerMainArgs* args = (ServerMainArgs*)server_main_args;
@@ -129,7 +133,7 @@ Server::Server(const DMCConfig* conf) {
       printf("start worker %d\n", w);
       worker_args_[w].worker_id = w;
       worker_args_[w].core_id =
-          (w % NUM_CORES) * 2;  // bind to the same numa node
+          ((conf->core_id + w) % NUM_CORES) * 2;  // bind to the same numa node
       worker_args_[w].server = this;
       ret = pthread_create(&worker_tid_[w], NULL, server_worker_thread,
                            (void*)&worker_args_[w]);
@@ -251,7 +255,7 @@ int Server::server_on_connect(const UDPMsg* request,
 
   // post recv if the server is active
   if (true) {
-    assert(request->id < 512);
+    assert(request->id < MSG_BUF_NUM);
     rc = nm_->rdma_post_recv_sid_async(&rr_list_[request->id], request->id);
   }
   return 0;
@@ -1158,4 +1162,217 @@ void Server::adjust_prio_slot_map(Slot* slot,
 
 uint32_t Server::get_slot_id(Slot* slot) {
   return ((uint64_t)slot - mm_->get_base_addr()) / sizeof(Slot);
+}
+
+void* packed_server_main(void* packed_server) {
+    return ((PackedServer *) packed_server)->thread_main();
+}
+
+PackedServer::PackedServer(const DMCConfig* conf) {
+    server_id_ = conf->server_id;
+    base_addr_ = conf->server_base_addr;
+    base_len_ = conf->server_data_len;
+    eviction_type_ = conf->eviction_type;
+    eviction_prio_ = conf->eviction_priority;
+
+    srand(server_id_);
+
+    need_stop_ = 0;
+
+    nm_ = new UDPNetworkManager(conf);
+    hash_ = dmc_new_hash(conf->hash_type);
+
+    struct ibv_pd* pd = nm_->get_ib_pd();
+
+    // allocate data area
+    int port_flag = PROT_READ | PROT_WRITE;
+    int mm_flag =
+            MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED | MAP_HUGETLB | MAP_HUGE_2MB;
+    data_ = mmap((void*)base_addr_, base_len_, port_flag, mm_flag, -1, 0);
+    if ((uint64_t)data_ != base_addr_) {
+        printd(L_ERROR, "mapping %ld to 0x%lx failed", base_len_, base_addr_);
+        assert(0);
+    }
+
+    // initialize hashmap
+    for (int i = 0; i < PACKED_HASH_NUM_BUCKETS; ++i) {
+        uint64_t bucket_addr = i * sizeof(PackedBucket) + base_addr_;
+        PackedSlot* slot = (PackedSlot *) bucket_addr;
+        for (int j = 0; j < PACKED_HASH_BUCKET_ASSOC_NUM; ++j, ++slot) {
+            slot->visibility = 0;
+            slot->integrity = 1;
+        }
+    }
+
+    int access_flag = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ |
+                      IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_ATOMIC;
+    mr_ = ibv_reg_mr(pd, data_, base_len_, access_flag);
+    assert(mr_ != NULL);
+    printd(L_INFO, "Registered MR: %p rkey %x\n", mr_->addr, mr_->rkey);
+    spin_unlock(&mm_lock_);
+
+    // allocate message buffer
+    send_msg_buffer_ = malloc(MSG_BUF_SIZE * MSG_BUF_NUM);
+    recv_msg_buffer_ = malloc(MSG_BUF_SIZE * MSG_BUF_NUM);
+    assert(send_msg_buffer_ != NULL);
+    assert(recv_msg_buffer_ != NULL);
+
+    pd = nm_->get_ib_pd();
+    send_msg_buffer_mr_ =
+            ibv_reg_mr(pd, send_msg_buffer_, MSG_BUF_SIZE * MSG_BUF_NUM,
+                       IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+    recv_msg_buffer_mr_ =
+            ibv_reg_mr(pd, recv_msg_buffer_, MSG_BUF_SIZE * MSG_BUF_NUM,
+                       IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+    assert(send_msg_buffer_mr_ != NULL && recv_msg_buffer_mr_ != NULL);
+    memset(sr_list_, 0, sizeof(struct ibv_send_wr) * MSG_BUF_NUM);
+
+    // prepare multiple work requests
+    for (uint64_t i = 0; i < MSG_BUF_NUM; i++) {
+        // initialize sr_list_
+        sr_list_[i].wr_id = i + 1000;
+        sr_list_[i].next = NULL;
+        sr_list_[i].sg_list = &sr_sge_list_[i];
+        sr_list_[i].num_sge = 1;
+        sr_list_[i].opcode = IBV_WR_SEND;
+        sr_list_[i].send_flags = IBV_SEND_SIGNALED;
+        sr_sge_list_[i].addr = (uint64_t)send_msg_buffer_ + i * MSG_BUF_SIZE;
+        sr_sge_list_[i].length = MSG_BUF_SIZE;
+        sr_sge_list_[i].lkey = send_msg_buffer_mr_->lkey;
+
+        // initialize rr_list_
+        rr_list_[i].wr_id = i;
+        rr_list_[i].next = NULL;
+        rr_list_[i].sg_list = &rr_sge_list_[i];
+        rr_list_[i].num_sge = 1;
+        rr_sge_list_[i].addr = (uint64_t)recv_msg_buffer_ + i * MSG_BUF_SIZE;
+        rr_sge_list_[i].length = MSG_BUF_SIZE;
+        rr_sge_list_[i].lkey = recv_msg_buffer_mr_->lkey;
+    }
+}
+
+PackedServer::~PackedServer() {
+    delete nm_;
+}
+
+int PackedServer::server_on_connect(const UDPMsg* request,
+                                    struct sockaddr_in* src_addr,
+                                    socklen_t src_addr_len) {
+    int rc = 0;
+    UDPMsg reply;
+    memset(&reply, 0, sizeof(UDPMsg));
+
+    reply.id = server_id_;
+    reply.type = UDPMSG_REP_CONNECT;
+    rc = nm_->nm_on_connect_new_qp(request, &reply.body.conn_info.qp_info);
+    assert(rc == 0);
+
+    spin_lock(&mm_lock_);
+    reply.body.conn_info.mr_info.addr = (uint64_t)mr_->addr;
+    reply.body.conn_info.mr_info.rkey = mr_->rkey;
+    spin_unlock(&mm_lock_);
+    assert(rc == 0);
+
+    serialize_udpmsg(&reply);
+
+    rc = nm_->send_udp_msg(&reply, src_addr, src_addr_len);
+    assert(rc == 0);
+
+    deserialize_udpmsg(&reply);
+    rc = nm_->nm_on_connect_connect_qp(request->id, &reply.body.conn_info.qp_info,
+                                       &request->body.conn_info.qp_info);
+    assert(rc == 0);
+
+    // post recv if the server is active
+    if (true) {
+        assert(request->id < MSG_BUF_NUM);
+        rc = nm_->rdma_post_recv_sid_async(&rr_list_[request->id], request->id);
+    }
+    return 0;
+}
+
+void* PackedServer::thread_main() {
+    struct sockaddr_in client_addr;
+    socklen_t client_addr_len = sizeof(struct sockaddr_in);
+    UDPMsg request;
+    int rc = 0;
+    while (!need_stop_) {
+        rc = nm_->recv_udp_msg(&request, &client_addr, &client_addr_len);
+        if (rc) {
+            continue;
+        }
+
+        deserialize_udpmsg(&request);
+
+        if (request.type == UDPMSG_REQ_CONNECT) {
+            rc = server_on_connect(&request, &client_addr, client_addr_len);
+            assert(rc == 0);
+        /* } else if (request.type == UDPMSG_REQ_ALLOC) {
+            rc = server_on_alloc(&request, &client_addr, client_addr_len);
+            assert(rc == 0);
+        } else if (request.type == UDPMSG_REQ_TS) {
+            rc = server_on_get_ts(&request, &client_addr, client_addr_len); */
+        } else {
+            printd(L_ERROR, "Unsupported message type: %d", request.type);
+        }
+    }
+    return NULL;
+}
+
+void PackedServer::stop() {
+    // set stop flag
+    need_stop_ = 1;
+}
+
+int PackedServer::put_key(uint8_t *key, uint8_t key_length) {
+    char key_buf[256] = {0};
+    memcpy(key_buf, key, key_length);
+    printd(L_DEBUG, "put %s", key_buf);
+    uint64_t key_hash = hash_->hash_func1(key, key_length);
+    uint64_t bucket_id = key_hash % PACKED_HASH_NUM_BUCKETS;
+    uint64_t bucket_addr = bucket_id * sizeof(PackedBucket) + base_addr_;
+    PackedSlot* slot = (PackedSlot *) bucket_addr;
+    int victim = -1;
+    uint64_t victim_ts = 0;
+    for (int i = 0; i < PACKED_HASH_BUCKET_ASSOC_NUM; ++i, ++slot) {
+        if (slot->visibility && memcmp(key_buf, reinterpret_cast<char *>(slot->key), PACKED_KEY_LEN) == 0) {
+            return -1;
+        }
+        if (!slot->visibility && slot->integrity) {
+            slot->integrity = 0;
+            memcpy((char *) slot->key, key_buf, key_length);
+            slot->visibility = 1;
+            return i;
+        }
+        if (slot->visibility && slot->integrity) {
+            if (victim == -1 || victim_ts > slot->acc_ts) {
+                victim = i;
+                victim_ts = slot->acc_ts;
+            }
+        }
+    }
+    if (victim != -1) {
+        slot = ((PackedSlot *) bucket_addr) + victim;
+        slot->integrity = 0;
+        memcpy((char *) slot->key, key_buf, key_length);
+        slot->visibility = 1;
+    }
+    return victim;
+}
+
+int PackedServer::invalidate_key(uint8_t *key, uint8_t key_length) {
+    char key_buf[256] = {0};
+    memcpy(key_buf, key, key_length);
+    printd(L_DEBUG, "invalidate %s", key_buf);
+    uint64_t key_hash = hash_->hash_func1(key, key_length);
+    uint64_t bucket_id = key_hash % PACKED_HASH_NUM_BUCKETS;
+    uint64_t bucket_addr = bucket_id * sizeof(PackedBucket) + base_addr_;
+    PackedSlot* slot = (PackedSlot *) bucket_addr;
+    for (int i = 0; i < PACKED_HASH_BUCKET_ASSOC_NUM; ++i, ++slot) {
+        if (slot->visibility && memcmp(key_buf, reinterpret_cast<char *>(slot->key), PACKED_KEY_LEN) == 0) {
+            slot->visibility = 0;
+            return i;
+        }
+    }
+    return -1;
 }

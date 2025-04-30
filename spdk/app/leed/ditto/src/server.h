@@ -16,6 +16,7 @@
 #include "fifo_history.h"
 #include "lw_history.h"
 #include "nm.h"
+#include "packed_data_struct.h"
 #include "priority.h"
 #include "rlist.h"
 #include "server_mm.h"
@@ -195,5 +196,53 @@ class Server {
 };
 
 void* server_main(void* server_main_args);
+
+class PackedServer;
+
+class PackedServer {
+    uint32_t server_id_;
+    uint64_t base_addr_;
+    uint64_t base_len_;
+
+    uint8_t eviction_type_;
+    uint8_t eviction_prio_;
+
+    uint8_t need_stop_;
+
+    UDPNetworkManager* nm_;
+    DMCHash* hash_;
+    spinlock mm_lock_;
+
+    struct ibv_mr* mr_;
+    void* data_;
+
+    // for active server
+    void* send_msg_buffer_;
+    void* recv_msg_buffer_;
+    struct ibv_mr* send_msg_buffer_mr_;
+    struct ibv_mr* recv_msg_buffer_mr_;
+    struct ibv_recv_wr rr_list_[MSG_BUF_NUM];
+    struct ibv_send_wr sr_list_[MSG_BUF_NUM];
+    struct ibv_sge rr_sge_list_[MSG_BUF_NUM];
+    struct ibv_sge sr_sge_list_[MSG_BUF_NUM];
+
+    int server_on_connect(const UDPMsg* request,
+                          struct sockaddr_in* src_addr,
+                          socklen_t src_addr_len);
+
+public:
+    PackedServer(const DMCConfig* conf);
+    ~PackedServer();
+
+    void* thread_main();  // listen for connection and allocation requests
+
+    void stop();
+
+    int put_key(uint8_t *key, uint8_t key_length);
+
+    int invalidate_key(uint8_t *key, uint8_t key_length);
+};
+
+void* packed_server_main(void* packed_server);
 
 #endif

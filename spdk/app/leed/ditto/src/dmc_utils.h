@@ -22,7 +22,7 @@
 // #define USE_PENALTY
 // #define MULTI_POLICY
 #define CLIQUEMAP_SYNC_INTERVAL_US (2000)  // 5ms
-#define NUM_CORES (72)
+#define NUM_CORES (24)
 // #define ELA_MEM_TPT
 
 // #define USE_REWARDS

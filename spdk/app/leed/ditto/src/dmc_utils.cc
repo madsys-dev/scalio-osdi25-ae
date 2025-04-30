@@ -53,7 +53,7 @@ static int parse_priority(const std::string& priority_str) {
 }
 
 int load_config(const char* fname, __OUT DMCConfig* config) {
-  std::fstream config_fs(fname);
+  std::ifstream config_fs(fname);
   assert(config_fs.is_open());
 
   boost::property_tree::ptree pt;

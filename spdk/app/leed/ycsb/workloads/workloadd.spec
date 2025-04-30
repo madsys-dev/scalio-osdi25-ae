@@ -24,5 +24,5 @@ insertproportion=0.05
 requestdistribution=latest
 recordcount=20000000
 operationcount=8000000
-fieldlength=1024
+fieldlength=64
 

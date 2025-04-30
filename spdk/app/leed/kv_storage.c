@@ -136,6 +136,7 @@ int kv_storage_init(struct kv_storage *self, uint32_t index) {
         return -1;
     }
     int rc = 0;
+    sleep(1);
     SPDK_NOTICELOG("Opening the bdev %s\n", priv(self)->bdev->name);
     rc = spdk_bdev_open(priv(self)->bdev, true, NULL, NULL, &priv(self)->bdev_desc);
     if (rc) {

@@ -106,6 +106,12 @@ class CoreWorkload {
   ///
   static const std::string REQUEST_DISTRIBUTION_PROPERTY;
   static const std::string REQUEST_DISTRIBUTION_DEFAULT;
+
+  ///
+  /// The name of the property for the zipfian constant.
+  ///
+  static const std::string ZIPFIAN_CONSTANT_PROPERTY;
+  static const std::string ZIPFIAN_CONSTANT_DEFAULT;
   
   ///
   /// The name of the property for adding zero padding to record numbers in order to match 

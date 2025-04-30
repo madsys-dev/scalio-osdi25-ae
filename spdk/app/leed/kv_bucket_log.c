@@ -215,8 +215,8 @@ static void segment_get_cb(bool success, void *arg) {
     kv_free(arg);
 }
 
-void kv_bucket_seg_get(struct kv_bucket_log *self, struct kv_bucket_segment *seg, bool strict, kv_circular_log_io_cb cb, void *cb_arg) {
-    struct kv_bucket_meta meta = kv_bucket_meta_get(self, seg->bucket_id);
+void kv_bucket_seg_get(struct kv_bucket_log *self, struct kv_bucket_segment *seg, struct kv_bucket_meta *meta_ptr, bool strict, kv_circular_log_io_cb cb, void *cb_arg) {
+    struct kv_bucket_meta meta = meta_ptr ? *meta_ptr : kv_bucket_meta_get(self, seg->bucket_id);
     if (meta.chain_length != 0) {
         struct segment_get_ctx *ctx = kv_malloc(sizeof(*ctx));
         *ctx = (struct segment_get_ctx){self, seg, strict, cb, cb_arg};

@@ -164,7 +164,7 @@ struct ibv_qp* UDPNetworkManager::create_rc_qp() {
     qp_init_attr.sq_sig_all = 0;
     qp_init_attr.send_cq = ib_send_cq_;
     qp_init_attr.recv_cq = ib_recv_cq_;
-    qp_init_attr.cap.max_send_wr = 512;
+    qp_init_attr.cap.max_send_wr = 4096;
     qp_init_attr.cap.max_recv_wr = 1;
     qp_init_attr.cap.max_send_sge = 16;
     qp_init_attr.cap.max_recv_sge = 16;
@@ -174,8 +174,8 @@ struct ibv_qp* UDPNetworkManager::create_rc_qp() {
     qp_init_attr.sq_sig_all = 0;
     qp_init_attr.send_cq = ib_send_cq_;
     qp_init_attr.recv_cq = ib_recv_cq_;
-    qp_init_attr.cap.max_send_wr = 512;
-    qp_init_attr.cap.max_recv_wr = 512;
+    qp_init_attr.cap.max_send_wr = 4096;
+    qp_init_attr.cap.max_recv_wr = 4096;
     qp_init_attr.cap.max_send_sge = 16;
     qp_init_attr.cap.max_recv_sge = 16;
     qp_init_attr.cap.max_inline_data = 256;

@@ -31,4 +31,11 @@ void kv_value_log_write(struct kv_value_log *self, uint64_t bucket_id, uint8_t *
                         
 void kv_value_log_read(struct kv_value_log *self, uint64_t offset, uint8_t *value, uint32_t value_length,
                        kv_circular_log_io_cb cb, void *cb_arg);
+
+void kv_value_log_buffered_offset(struct kv_value_log *self, uint32_t *value_length, uint64_t *value_offset,
+                                  uint32_t buffer_size);
+
+void kv_value_log_buffered_write(struct kv_value_log *self, uint64_t *value_offset, uint64_t *bucket_id,
+                                 uint8_t *value, uint32_t *value_length, uint32_t buffer_size,
+                                 kv_circular_log_io_cb cb, void *cb_arg);
 #endif

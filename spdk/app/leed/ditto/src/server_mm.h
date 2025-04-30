@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <infiniband/verbs.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include <map>
 #include <queue>

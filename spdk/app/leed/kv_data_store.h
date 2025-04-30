@@ -4,6 +4,7 @@
 #include "kv_ds_queue.h"
 #include "kv_storage.h"
 #include "kv_value_log.h"
+
 struct kv_data_store {
     struct kv_bucket_log bucket_log;
     struct kv_value_log value_log;
@@ -28,9 +29,13 @@ void kv_data_store_init(struct kv_data_store *self, struct kv_storage *storage, 
 void kv_data_store_fini(struct kv_data_store *self);
 kv_data_store_ctx kv_data_store_set(struct kv_data_store *self, uint8_t *key, uint8_t key_length, uint8_t *value, uint32_t value_length,
                                     kv_data_store_cb cb, void *cb_arg);
+kv_data_store_ctx kv_data_store_buffered_set(struct kv_data_store *self, uint8_t *key[], uint8_t key_length[], uint8_t *value[], uint32_t value_length[],
+                                             uint64_t value_offset[], uint64_t bucket_id[], struct kv_bucket_segment seg[], uint32_t buffer_size,
+                                             kv_data_store_cb cb, void *cb_arg);
 void kv_data_store_set_commit(kv_data_store_ctx arg, bool success);
+void kv_data_store_set_buffered_commit(kv_data_store_ctx arg, bool success);
 void kv_data_store_get(struct kv_data_store *self, uint8_t *key, uint8_t key_length, uint8_t *value, uint32_t *value_length,
-                       kv_data_store_cb cb, void *cb_arg);
+                       struct kv_bucket_meta *meta, kv_data_store_cb cb, void *cb_arg);
 kv_data_store_ctx kv_data_store_delete(struct kv_data_store *self, uint8_t *key, uint8_t key_length, kv_data_store_cb cb, void *cb_arg);
 void kv_data_store_del_commit(kv_data_store_ctx arg, bool success);
 

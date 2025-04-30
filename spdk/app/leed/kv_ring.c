@@ -276,7 +276,7 @@ static bool try_send_req(struct dispatch_ctx *ctx) {
     struct vnode_chain *chain = get_chain(KV_MSG_KEY(msg));
     if (chain == NULL) return false;
     msg->hop = 1;
-    if (msg->type == KV_MSG_GET) {
+    if (msg->type == KV_MSG_GET || msg->type == KV_MSG_META_GET) {
         struct kv_ds_q_info q_info[chain->rpl_num];
         uint32_t io_cnt[chain->rpl_num];
         uint32_t i = 0;
@@ -335,7 +335,7 @@ static bool try_send_req(struct dispatch_ctx *ctx) {
     struct kv_msg *msg = (struct kv_msg *)kv_rdma_get_req_buf(ctx->req);
     uint8_t *key = KV_MSG_KEY(msg);
     struct vid_entry *entry = find_vid_entry_from_key(key, NULL);
-    if (msg->type == KV_MSG_GET) {
+    if (msg->type == KV_MSG_GET || msg->type == KV_MSG_META_GET) {
 #if DISPATCH_TYPE == 1
         entry = get_vnode(key, entry->node->info->rpl_num);  // forward to tail
 #else
@@ -734,7 +734,7 @@ static void reg_node(void) {
     uint64_t init_lease = kvEtcdLeaseCreate(5, false);
 
     uint32_t ds_id = 0;
-    for (size_t i = 0; i < ctx->vid_per_ssd * ctx->ds_num; i++) {
+    for (size_t i = 0; i < ctx->ring_num; i++) {
         struct kv_etcd_vid vid = {.ds_id = ds_id};
         // random_vid(vid.vid);
         hash_vid(vid.vid, ctx->local_ip, ctx->local_port, i);
@@ -878,6 +878,17 @@ static inline const char *key_next(const char *s1) {
     return s1;
 }
 
+#define MAX_RING_NUM 1024
+
+bool put_joining_used[MAX_RING_NUM] = {};
+bool put_running_used[MAX_RING_NUM] = {};
+bool put_leaving_used[MAX_RING_NUM] = {};
+bool *put_state_used[] = {put_joining_used, put_running_used, put_leaving_used};
+bool del_joining_used[MAX_RING_NUM] = {};
+bool del_running_used[MAX_RING_NUM] = {};
+bool del_leaving_used[MAX_RING_NUM] = {};
+bool *del_state_used[] = {del_joining_used, del_running_used, del_leaving_used};
+
 static void msg_handler(enum kv_etcd_msg_type msg, const char *key, uint32_t key_len, const void *val, uint32_t val_len) {
     // if msg == KV_ETCD_MSG_DEL, val_len == 0
     const char *key_end = key + key_len;
@@ -914,6 +925,13 @@ static void msg_handler(enum kv_etcd_msg_type msg, const char *key, uint32_t key
         } else {
             key_copy(ctx->src_id, key);
         }
+        bool **state_used = msg == KV_ETCD_MSG_PUT ? put_state_used : del_state_used;
+        if (state_used[ctx->state][ctx->ring_id]) {
+            printf("[WARN] duplicate ring_id detected: %s %s RING(%u)\n", msg == KV_ETCD_MSG_PUT ? "PUT" : "DEL", state_str[ctx->state], ctx->ring_id);
+            kv_free(ctx);
+            return;
+        }
+        state_used[ctx->state][ctx->ring_id] = true;
         if (ctx->ring_id == 0)
             printf("[%s] %s %s RING(%u): %s\n", ctx->src_id, msg == KV_ETCD_MSG_PUT ? "PUT" : "DEL", state_str[ctx->state], ctx->ring_id, ctx->node_id);
         if (msg == KV_ETCD_MSG_PUT) {
@@ -970,7 +988,7 @@ static void rdma_req_handler_wrapper(void *req_h, kv_rdma_mr req, uint32_t req_s
     ctx = kv_malloc(sizeof(*ctx));
     ctx->ring_version = self->rings_version[get_ring_id(KV_MSG_KEY(msg), self->log_ring_num)] + chain->ring->version;
     ctx->node = NULL;
-    if (msg->type == KV_MSG_SET || msg->type == KV_MSG_DEL) {
+    if (msg->type == KV_MSG_SET || msg->type == KV_MSG_BUFFERED_SET || msg->type == KV_MSG_DEL) {
         struct vid_entry *local, *next = NULL;
         if (msg->hop == chain->rpl_num + 1) {
             local = chain->copy;
@@ -998,7 +1016,7 @@ static void rdma_req_handler_wrapper(void *req_h, kv_rdma_mr req, uint32_t req_s
         self->req_handler(req_h, req, ctx, ctx->node != NULL, local->vid.ds_id, vnode_type, arg);
         kv_free(chain);
         return;
-    } else if (msg->type == KV_MSG_GET) {
+    } else if (msg->type == KV_MSG_GET || msg->type == KV_MSG_META_GET) {
         if (msg->hop == 1) {
             uint32_t i = 0;
             for (; i < chain->rpl_num; i++)

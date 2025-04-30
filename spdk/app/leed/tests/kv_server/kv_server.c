@@ -102,7 +102,7 @@ static void io_start(void *arg) {
             break;
         case KV_MSG_GET:
             kv_data_store_get(&self->data_store, KV_MSG_KEY(io->msg), io->msg->key_len, KV_MSG_VALUE(io->msg),
-                              &io->msg->value_len, io_fini, arg);
+                              &io->msg->value_len, NULL, io_fini, arg);
             break;
         case KV_MSG_DEL:
             assert(io->msg->value_len == 0);

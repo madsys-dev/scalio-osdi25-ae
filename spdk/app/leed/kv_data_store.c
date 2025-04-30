@@ -162,6 +162,17 @@ static void fill_the_hole(struct kv_data_store *self, struct kv_bucket_segment *
 }
 
 // --- set ---
+struct buffered_set_ctx {
+    uint32_t buffer_size;
+    uint8_t **key;
+    uint8_t *key_length;
+    uint8_t value[KV_BLK_SIZE];
+    uint32_t *value_length;
+    uint64_t *value_offset;
+    uint64_t *bucket_id;
+    struct kv_bucket_segment *seg;
+};
+
 struct set_ctx {
     struct kv_data_store *self;
     uint8_t *key;
@@ -176,11 +187,22 @@ struct set_ctx {
     struct kv_bucket_segment seg;
     uint64_t value_offset;
     bool success;
+    struct buffered_set_ctx set_ctx_buffer;
 };
 
 void kv_data_store_set_commit(kv_data_store_ctx arg, bool success) {
     struct set_ctx *ctx = arg;
     if (success) kv_bucket_seg_commit(&ctx->self->bucket_log, &ctx->seg);
+    kv_bucket_unlock(&ctx->self->bucket_log, &ctx->segs);
+    kv_free(ctx);
+}
+
+void kv_data_store_set_buffered_commit(kv_data_store_ctx arg, bool success) {
+    struct set_ctx *ctx = arg;
+    struct kv_bucket_segment *seg;
+    TAILQ_FOREACH(seg, &ctx->segs, entry) {
+        if (success) kv_bucket_seg_commit(&ctx->self->bucket_log, seg);
+    }
     kv_bucket_unlock(&ctx->self->bucket_log, &ctx->segs);
     kv_free(ctx);
 }
@@ -220,6 +242,42 @@ static void set_lock_cb(void *arg) {
     }
 }
 
+static void buffered_set_lock_cb(void *arg) {
+    struct set_ctx *ctx = arg;
+    if (ctx->success == false) {
+        set_finish_cb(false, arg);
+        return;
+    }
+    for (uint32_t i = 0; i < ctx->set_ctx_buffer.buffer_size; ++i) {
+        struct kv_bucket_segment *seg;
+        TAILQ_FOREACH(seg, &ctx->segs, entry) {
+            if (seg->bucket_id == ctx->set_ctx_buffer.bucket_id[i]) {
+                break;
+            }
+        }
+        assert(seg);
+        struct kv_item *located_item;
+        find_item_plus(ctx->self, seg, ctx->set_ctx_buffer.key[i], ctx->set_ctx_buffer.key_length[i], &located_item);
+        if (located_item) {  // update
+            seg->dirty = true;
+            located_item->value_length = ctx->set_ctx_buffer.value_length[i];
+            located_item->value_offset = ctx->set_ctx_buffer.value_offset[i];
+        } else {  // create
+            if ((located_item = find_empty(ctx->self, seg))) {
+                ctx->seg.dirty = true;
+                located_item->key_length = ctx->set_ctx_buffer.key_length[i];
+                kv_memcpy(located_item->key, ctx->set_ctx_buffer.key[i], ctx->set_ctx_buffer.key_length[i]);
+                located_item->value_length = ctx->set_ctx_buffer.value_length[i];
+                located_item->value_offset = ctx->set_ctx_buffer.value_offset[i];
+            } else {
+                set_finish_cb(false, arg);
+                return;
+            }
+        }
+    }
+    kv_bucket_seg_put_bulk(&ctx->self->bucket_log, &ctx->segs, set_finish_cb, ctx);
+}
+
 static void set_start(void *arg) {
     struct set_ctx *ctx = arg;
     ctx->io_cnt = 2;
@@ -242,6 +300,50 @@ kv_data_store_ctx kv_data_store_set(struct kv_data_store *self, uint8_t *key, ui
     ctx->cb_arg = enqueue(self, KV_DS_SET, set_start, ctx, cb, cb_arg);
     return ctx;
 }
+
+static void buffered_set_start(void *arg) {
+    struct set_ctx *ctx = arg;
+    ctx->io_cnt = 2;
+    ctx->success = true;
+    kv_value_log_buffered_offset(&ctx->self->value_log, ctx->set_ctx_buffer.value_length, ctx->set_ctx_buffer.value_offset, ctx->set_ctx_buffer.buffer_size);
+    kv_value_log_buffered_write(&ctx->self->value_log, ctx->set_ctx_buffer.value_offset, ctx->set_ctx_buffer.bucket_id, ctx->set_ctx_buffer.value, ctx->set_ctx_buffer.value_length, ctx->set_ctx_buffer.buffer_size, set_finish_cb, ctx);
+
+    TAILQ_INIT(&ctx->segs);
+    for (uint32_t i = 0; i < ctx->set_ctx_buffer.buffer_size; ++i) {
+        for (uint32_t j = 0; j < i; ++j) {
+            if (ctx->set_ctx_buffer.bucket_id[j] == ctx->set_ctx_buffer.bucket_id[i]) {
+                goto collision;
+            }
+        }
+        kv_bucket_seg_init(&ctx->set_ctx_buffer.seg[i], ctx->set_ctx_buffer.bucket_id[i]);
+        TAILQ_INSERT_HEAD(&ctx->segs, &ctx->set_ctx_buffer.seg[i], entry);
+        collision:;
+    }
+    kv_bucket_lock(&ctx->self->bucket_log, &ctx->segs, buffered_set_lock_cb, ctx);
+}
+
+kv_data_store_ctx kv_data_store_buffered_set(struct kv_data_store *self, uint8_t *key[], uint8_t key_length[], uint8_t *value[], uint32_t value_length[],
+                                             uint64_t value_offset[], uint64_t bucket_id[], struct kv_bucket_segment seg[], uint32_t buffer_size,
+                                             kv_data_store_cb cb, void *cb_arg) {
+    struct set_ctx *ctx = kv_malloc(sizeof(struct set_ctx));
+    ctx->self = self;
+    ctx->set_ctx_buffer.key = key;
+    ctx->set_ctx_buffer.key_length = key_length;
+    ctx->set_ctx_buffer.value_length = value_length;
+    ctx->set_ctx_buffer.value_offset = value_offset;
+    ctx->set_ctx_buffer.bucket_id = bucket_id;
+    ctx->set_ctx_buffer.seg = seg;
+    ctx->set_ctx_buffer.buffer_size = buffer_size;
+    uint64_t offset = 0;
+    for (uint32_t i = 0; i < ctx->set_ctx_buffer.buffer_size; ++i) {
+        ctx->set_ctx_buffer.bucket_id[i] = kv_data_store_bucket_id(self, key[i]);
+        memcpy(ctx->set_ctx_buffer.value + offset, value[i], value_length[i]);
+        offset += value_length[i];
+    }
+    ctx->cb = dequeue;
+    ctx->cb_arg = enqueue(self, KV_DS_SET, buffered_set_start, ctx, cb, cb_arg);
+    return ctx;
+}
 // --- get ---
 struct get_ctx {
     struct kv_data_store *self;
@@ -252,6 +354,7 @@ struct get_ctx {
     kv_data_store_cb cb;
     void *cb_arg;
     struct kv_bucket_segment seg;
+    struct kv_bucket_meta *meta;
 };
 
 static void get_seg_cb(bool success, void *arg) {
@@ -275,13 +378,14 @@ static void get_seg_cb(bool success, void *arg) {
 static void get_read_bucket(void *arg) {
     struct get_ctx *ctx = arg;
     kv_bucket_seg_init(&ctx->seg, kv_data_store_bucket_id(ctx->self, ctx->key));
-    kv_bucket_seg_get(&ctx->self->bucket_log, &ctx->seg, true, get_seg_cb, ctx);
+    kv_bucket_seg_get(&ctx->self->bucket_log, &ctx->seg, ctx->meta, ctx->meta ? false : true, get_seg_cb, ctx);
 }
 
 void kv_data_store_get(struct kv_data_store *self, uint8_t *key, uint8_t key_length, uint8_t *value, uint32_t *value_length,
-                       kv_data_store_cb cb, void *cb_arg) {
+                       struct kv_bucket_meta *meta, kv_data_store_cb cb, void *cb_arg) {
     struct get_ctx *ctx = kv_malloc(sizeof(struct get_ctx));
     *ctx = (struct get_ctx){self, key, key_length, value, value_length};
+    ctx->meta = meta;
     ctx->cb = dequeue;
     ctx->cb_arg = enqueue(self, KV_DS_GET, get_read_bucket, ctx, cb, cb_arg);
 }

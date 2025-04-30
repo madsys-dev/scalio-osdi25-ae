@@ -12,6 +12,8 @@ struct kv_msg {
 #define KV_MSG_GET (1U)
 #define KV_MSG_SET (2U)
 #define KV_MSG_DEL (3U)
+#define KV_MSG_META_GET (5U)
+#define KV_MSG_BUFFERED_SET (6U)
 #define KV_MSG_TEST (128U)
 #define KV_MSG_OUTDATED (254U)
 #define KV_MSG_ERR (255U)
@@ -19,6 +21,10 @@ struct kv_msg {
     uint8_t key_len;
     uint16_t hop;
     uint32_t value_len;
+    uint8_t put_key_ok;
+    uint8_t slot_id;
+    uint16_t reserved;
+    uint32_t ds_id;
     struct kv_ds_q_info q_info;
     uint8_t data[0];
 // data:

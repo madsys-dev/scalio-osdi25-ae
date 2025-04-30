@@ -10,6 +10,7 @@
 #include "../../kv_data_store.h"
 #include "../../kv_msg.h"
 #include "../../utils/city.h"
+#include "../../utils/ditto_wrapper.h"
 #include "../../utils/timing.h"
 #include "../../ycsb/kv_ycsb.h"
 struct {
@@ -21,6 +22,10 @@ struct {
     bool seq_read, fill, seq_write, del;
     char json_config_file[1024];
     char workload_file[1024];
+    char client_conf_file[1024];
+    char memcached_ip[32];
+    bool ditto;
+    bool ours;
 
 } opt = {.num_items = 1024,
          .operation_cnt = 512,
@@ -30,6 +35,10 @@ struct {
          .concurrent_io_num = 32,
          .json_config_file = "config.json",
          .workload_file = "workloada.spec",
+         .client_conf_file = "client_conf.json",
+         .memcached_ip = "10.10.1.2",
+         .ditto = false,
+         .ours = false,
          .seq_read = false,
          .seq_write = false,
          .del = false,
@@ -39,18 +48,21 @@ static void help(void) {
     printf("  -h               Display this help message\n");
     printf("  -c <config_file> Set the SPDK JSON config file: %s\n", opt.json_config_file);
     printf("  -w <workload_file> Set the YCSB workload file: %s\n", opt.workload_file);
+    printf("  -f <client_conf> Set the Ditto client config file: %s\n", opt.client_conf_file);
     printf("  -d <ssd_num>     Set the number of SSDs: %u\n", opt.ssd_num);
     printf("  -P <producer_num> Set the number of YCSB threads : %u\n", opt.producer_num);
     printf("  -i <io_num>      Set the number of concurrent I/Os: %u\n", opt.concurrent_io_num);
+    printf("  -m <memcached_ip> Set the memcached's IP: %s\n", opt.memcached_ip);
     printf("  -R               Perform sequential read operations\n");
     printf("  -W               Perform sequential write operations\n");
     printf("  -D               Perform delete operations\n");
     printf("  -F               Perform fill operations\n");
+    printf("  -C <ditto/ours>  Enable caching\n");
     return;
 }
 static void get_options(int argc, char **argv) {
     int ch;
-    while ((ch = getopt(argc, argv, "hd:w:c:i:P:RWFD")) != -1) switch (ch) {
+    while ((ch = getopt(argc, argv, "hd:w:c:f:i:P:m:RWFDC:")) != -1) switch (ch) {
             case 'w':
                 strcpy(opt.workload_file, optarg);
                 break;
@@ -60,11 +72,17 @@ static void get_options(int argc, char **argv) {
             case 'c':
                 strcpy(opt.json_config_file, optarg);
                 break;
+            case 'f':
+                strcpy(opt.client_conf_file, optarg);
+                break;
             case 'i':
                 opt.concurrent_io_num = atol(optarg);
                 break;
             case 'P':
                 opt.producer_num = atol(optarg);
+                break;
+            case 'm':
+                strcpy(opt.memcached_ip, optarg);
                 break;
             case 'R':
                 opt.seq_read = true;
@@ -77,6 +95,16 @@ static void get_options(int argc, char **argv) {
                 break;
             case 'F':
                 opt.fill = true;
+                break;
+            case 'C':
+                if (strcmp(optarg, "ditto") == 0) {
+                    opt.ditto = true;
+                } else if (strcmp(optarg, "ours") == 0) {
+                    opt.ours = true;
+                } else {
+                    help();
+                    exit(-1);
+                }
                 break;
             default:
                 help();
@@ -99,7 +127,7 @@ struct io_buffer_t {
     uint32_t worker_id;
     uint32_t producer_id;
     struct kv_msg *msg;
-    bool read_modify_write, is_finished;
+    bool read_modify_write, is_finished, ditto_fill;
     struct timeval io_start;
     kv_data_store_ctx ds_ctx;
 };
@@ -148,7 +176,9 @@ static void io_fini(bool success, void *arg) {
     } else if (io->msg->type == KV_MSG_DEL) {
         kv_data_store_del_commit(io->ds_ctx, true);
     }
-    io->msg->type = success ? KV_MSG_OK : KV_MSG_ERR;
+    if (!opt.ditto || state == FILL) {
+        io->msg->type = success ? KV_MSG_OK : KV_MSG_ERR;
+    }
     kv_app_send(opt.ssd_num + io->producer_id, test, arg);
 }
 
@@ -162,7 +192,7 @@ static void io_start(void *arg) {
                                            arg);
             break;
         case KV_MSG_GET:
-            kv_data_store_get(&self->data_store, KV_MSG_KEY(msg), msg->key_len, KV_MSG_VALUE(msg), &msg->value_len, io_fini,
+            kv_data_store_get(&self->data_store, KV_MSG_KEY(msg), msg->key_len, KV_MSG_VALUE(msg), &msg->value_len, NULL, io_fini,
                               arg);
             break;
         case KV_MSG_DEL:
@@ -278,6 +308,16 @@ static void test(void *arg) {
     struct io_buffer_t *io = arg;
     struct producer *p = io ? producers + io->producer_id : producers;
     if (io && io->is_finished) {
+        if (state != FILL && opt.ditto) {
+            if (io->msg->type == KV_MSG_GET) {
+                if (io->ditto_fill) {
+                    ditto_set(io->producer_id, KV_MSG_KEY(io->msg), io->msg->key_len, KV_MSG_VALUE(io->msg), io->msg->value_len);
+                }
+            } else {
+                ditto_set(io->producer_id, KV_MSG_KEY(io->msg), io->msg->key_len, KV_MSG_VALUE(io->msg), 0);
+            }
+            io->msg->type = KV_MSG_OK;
+        }
         struct timeval io_end;
         gettimeofday(&io_end, NULL);
         double latency = timeval_diff(&io->io_start, &io_end);
@@ -334,7 +374,24 @@ static void test(void *arg) {
     p->start_io++;
     gettimeofday(&io->io_start, NULL);
     io->worker_id = (*(uint64_t *)KV_MSG_KEY(msg) >> (64 - 3)) % opt.ssd_num;
-    kv_app_send(io->worker_id, io_start, io);
+    if (io->msg->type == KV_MSG_GET) {
+        assert(state != FILL);
+        int ret;
+        if (opt.ditto) {
+            ret = ditto_get(io->producer_id, KV_MSG_KEY(msg), msg->key_len, KV_MSG_VALUE(msg), &msg->value_len);
+        } else {
+            ret = -1;
+        }
+        if (ret != 0 || msg->value_len == 0) {
+            io->ditto_fill = true;
+            kv_app_send(io->worker_id, io_start, io);
+        } else {
+            io->ditto_fill = false;
+            test(arg);
+        }
+    } else {
+        kv_app_send(io->worker_id, io_start, io);
+    }
 }
 #define KEY_PER_BKT_SEGMENT (KV_ITEM_PER_BUCKET)
 // memory usage per key: 5/KEY_PER_BKT_SEGMENT bytes
@@ -357,6 +414,8 @@ int main(int argc, char **argv) {
     printf("DEBUG (low performance)\n");
 #endif
     get_options(argc, argv);
+    if (opt.ditto) ditto_init(opt.producer_num, 1, opt.client_conf_file, opt.memcached_ip);
+    if (opt.ours) packed_init(opt.producer_num, 1, opt.client_conf_file, opt.memcached_ip);
     struct kv_app_task *task = calloc(opt.ssd_num + opt.producer_num, sizeof(struct kv_app_task));
     workers = calloc(opt.ssd_num, sizeof(struct worker));
     for (size_t i = 0; i < opt.ssd_num; i++) {
@@ -377,5 +436,7 @@ int main(int argc, char **argv) {
     free(producers);
     free(workers);
     free(task);
+    if (opt.ditto) ditto_fini(opt.producer_num);
+    if (opt.ours) packed_fini(opt.producer_num);
     return 0;
 }
