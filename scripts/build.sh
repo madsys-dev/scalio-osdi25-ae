@@ -9,8 +9,7 @@ if [[ "$(basename "$PWD")" != "spdk" ]]; then
 fi
 
 ./configure --with-rdma
-make -j
-make SKIP_DPDK_BUILD=1
+make
 
 cd app/leed/ditto
 mkdir build
