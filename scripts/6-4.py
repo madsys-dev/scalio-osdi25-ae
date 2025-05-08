@@ -1,3 +1,5 @@
+import os
+
 from ae_logger import logger
 from client_manager import ClientManager
 from server_manager import ServerManager
@@ -10,6 +12,8 @@ client_manager = ClientManager()
 server_manager = ServerManager()
 
 for workload in ["a", "b", "c", "d", "f"]:
+    if os.path.exists(f"figs/6-4-{workload}.pdf"):
+        continue
     plt.figure(figsize=(8, 5))
     for (system, batch) in [("ditto", False), ("scalio", True), ("scalio", False)]:
 

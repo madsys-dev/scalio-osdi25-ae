@@ -1,3 +1,5 @@
+import os
+
 from ae_logger import logger
 from client_manager import ClientManager
 from server_manager import ServerManager
@@ -14,6 +16,8 @@ slots_range = [4, 8, 16]
 x = np.arange(len(slots_range))
 
 for workload in ["a", "b", "c", "d", "f"]:
+    if os.path.exists(f"figs/6-5-slots-{workload}.pdf"):
+        continue
     fig, ax1 = plt.subplots(figsize=(10, 6))
     qps = []
     hr = []

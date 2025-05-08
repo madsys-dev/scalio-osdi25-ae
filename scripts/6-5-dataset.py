@@ -1,3 +1,5 @@
+import os
+
 from ae_logger import logger
 from client_manager import ClientManager
 from server_manager import ServerManager
@@ -14,6 +16,8 @@ size_range = ["20000000", "40000000", "60000000", "80000000"]
 x = np.arange(len(size_range))
 
 for workload in ["a", "b", "c", "d", "f"]:
+    if os.path.exists(f"figs/6-5-dataset-{workload}.pdf"):
+        continue
     fig, ax1 = plt.subplots(figsize=(10, 6))
     ax2 = ax1.twinx()
     for system in ["ditto", "scalio"]:

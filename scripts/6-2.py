@@ -1,3 +1,5 @@
+import os
+
 from ae_logger import logger
 from client_manager import ClientManager
 from server_manager import ServerManager
@@ -13,6 +15,8 @@ x = range(1, 8)
 system_names = ["leed", "ditto", "scalio"]
 
 for workload in ["a", "b", "c", "d", "f"]:
+    if os.path.exists(f"figs/6-2-{workload}.pdf"):
+        continue
     fig, (ax1, ax2) = plt.subplots(2, figsize=(10, 12))
 
     qps = {system: [] for system in system_names}

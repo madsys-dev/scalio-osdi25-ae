@@ -1,3 +1,5 @@
+import os
+
 from ae_logger import logger
 from client_manager import ClientManager
 from server_manager import ServerManager
@@ -14,6 +16,8 @@ skewness_range = ["0.5", "0.9", "0.99", "1.01"]
 x = np.arange(len(skewness_range))
 
 for workload in ["a", "b", "c", "f"]:
+    if os.path.exists(f"figs/6-5-skewness-{workload}.pdf"):
+        continue
     fig, ax1 = plt.subplots(figsize=(10, 6))
     ax2 = ax1.twinx()
     for system in ["ditto", "scalio"]:
