@@ -1,3 +1,5 @@
+import os
+
 from ae_logger import logger
 from client_manager import ClientManager
 from server_manager import ServerManager
@@ -10,6 +12,9 @@ client_manager = ClientManager()
 server_manager = ServerManager()
 
 values = [[] for _ in range(4)]
+
+if os.path.exists("figs/6-3.pdf"):
+    exit(0)
 
 for workload in ["a", "b", "c", "d", "f"]:
     for stage in range(4):
