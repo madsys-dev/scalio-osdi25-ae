@@ -54,7 +54,7 @@ bash scripts/build.sh
 
 - Enter the directory `~/share/scalio`.
 - Execute `bash scripts/evaluate.sh`.
-- The following scripts will run sequentially.
+- The following scripts will run sequentially. (Figures that have already been generated will be skipped.)
 
 | Figure    | Script          | Output files       | Estimated time |
 | --------- | --------------- | ------------------ | -------------- |
