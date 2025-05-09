@@ -35,6 +35,8 @@ ax2.plot(x, cpu, label="CPU usage for SSD I/O")
 
 ax1.set_xticks(x)
 
+ax2.set_ylim(0, 4)
+
 bars_labels, bars_handles = ax1.get_legend_handles_labels()
 lines_labels, lines_handles = ax2.get_legend_handles_labels()
 ax1.legend(bars_labels + lines_labels, bars_handles + lines_handles, loc='upper left')
