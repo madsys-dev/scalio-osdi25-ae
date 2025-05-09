@@ -52,28 +52,20 @@ bash scripts/build.sh
 
 > Scripts are located in `scripts/` and the output files are located in `figs/`.
 
-Although we have made every effort to ensure the robustness of the reproduction scripts, occasional failures may still occur.
+- Enter the directory `~/share/scalio`.
+- Execute `bash scripts/evaluate.sh`.
+- The following scripts will run sequentially.
 
-If you encounter stuck execution or any other issues, try on the server node with:
+| Figure    | Script          | Output files       | Estimated time |
+| --------- | --------------- | ------------------ | -------------- |
+| Figure 2  | 6-2.py          | 6-2-**c**.pdf      | *              |
+| Figure 5  | 2-1.py          | 2-1.pdf            | 40 minutes     |
+| Figure 11 | 6-2.py          | 6-2-*.pdf          | 8 hours        |
+| Figure 13 | 6-3.py          | 6-3.pdf            | 1 hour         |
+| Figure 14 | 6-4.py          | 6-4-*.pdf          | 4 hours        |
+| Figure 15 | 6-5-skewness.py | 6-5-skewness-*.pdf | 40 minutes     |
+| Figure 16 | 6-5-dataset.py  | 6-5-dataset-*.pdf  | 4 hours        |
+| Figure 17 | 6-5-cores.py    | 6-5-cores-*.pdf    | 1.5 hours      |
+| Figure 18 | 6-5-slots.py    | 6-5-slots-*.pdf    | 40 minutes     |
 
-- `python3 scripts/stop-the-world.py`
-- Use Ctrl + C to stop the failing script.
-- `python3 scripts/kick-the-tires.py`
-
-And retry with the failed script.
-
-For scripts that generate several sub-figures, you may manually modify the `for workload in [...]` loop to proceed at where the script failed.
-
-If the problem persists, please contact us to assist with resetting the environment.
-
-| Figure    | Script          | Output files       | Estimated time           |
-| --------- | --------------- | ------------------ | ------------------------ |
-| Figure 2  | 6-2.py          | 6-2-**c**.pdf      | Same script as Figure 11 |
-| Figure 5  | 2-1.py          | 2-1.pdf            | 40 minutes               |
-| Figure 11 | 6-2.py          | 6-2-*.pdf          | 8 hours                  |
-| Figure 13 | 6-3.py          | 6-3.pdf            | 1 hour                   |
-| Figure 14 | 6-4.py          | 6-4-*.pdf          | 4 hours                  |
-| Figure 15 | 6-5-skewness.py | 6-5-skewness-*.pdf | 40 minutes               |
-| Figure 16 | 6-5-dataset.py  | 6-5-dataset-*.pdf  | 4 hours                  |
-| Figure 17 | 6-5-cores.py    | 6-5-cores-*.pdf    | 1.5 hours                |
-| Figure 18 | 6-5-slots.py    | 6-5-slots-*.pdf    | 40 minutes               |
+*Figure 2 is the same as Figure 11 (c), so there is no need to run the script separately for Figure 2.
