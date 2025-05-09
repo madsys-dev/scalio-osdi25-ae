@@ -2,7 +2,7 @@ import invoke
 import os
 import re
 from dataclasses import dataclass
-from subprocess import Popen, DEVNULL
+from subprocess import Popen, DEVNULL, PIPE
 from time import sleep
 
 from fabric import Connection
@@ -35,12 +35,17 @@ class Result:
     qps: float
     hr: float
     ssd_iops: float
+    perf: float
+
+def parse_stack(line: str):
+    last_space = line.rfind(" ")
+    return line[:last_space], int(line[last_space + 1:])
 
 class ClientManager:
     def __init__(self):
         self.clients = [Connection(ip, user='ubuntu') for ip in client_ips]
 
-    def run(self, workload: str, num_ssd: int, system: str, fill: bool, stage: int = 3, io: int = 512, skewness: str = "0.99", size: str = "20000000") -> Result:
+    def run(self, workload: str, num_ssd: int, system: str, fill: bool, stage: int = 3, io: int = 512, skewness: str = "0.99", size: str = "20000000", op_cnt: str = "8000000", perf_pid: int | None = None) -> Result:
         if system == "scalio":
             system_flag = "-C ours"
         elif system == "ditto":
@@ -64,6 +69,7 @@ class ClientManager:
 
         os.system(f"sed -i \"s/^zipfianconstant=.*/zipfianconstant={skewness}/\" spdk/app/leed/ycsb/workloads/workload{workload}.spec")
         os.system(f"sed -i \"s/^recordcount=.*/recordcount={size}/\" spdk/app/leed/ycsb/workloads/workload{workload}.spec")
+        os.system(f"sed -i \"s/^operationcount=.*/operationcount={op_cnt}/\" spdk/app/leed/ycsb/workloads/workload{workload}.spec")
 
         if fill and num_clients > 1:
             os.system("pkill -f controller.py")
@@ -80,6 +86,19 @@ class ClientManager:
         sleep(3)
 
         client_processes = [client.run(f"cd share/scalio/spdk && sleep {index * 5} && sudo app/leed/app/ring_ycsb_client/kv_ring_ycsb_client -w app/leed/ycsb/workloads/workload{workload}.spec -I 1000 -i {io // num_clients} -x 1 {system_flag} -P {p} -x {1 + p * index} -d {num_ssd} -B {stage} {fill_flag}", asynchronous=True) for (index, client) in enumerate(self.clients[:num_clients])]
+
+        if perf_pid is not None:
+            os.system(f"sleep {5 * num_clients + 20}; sudo rm /tmp/perf.data*; sudo timeout 10s perf record -o /tmp/perf.data -F 99 --call-graph lbr -g -p {perf_pid}")
+            perf_process = Popen(["sudo", "perf", "script", "-i", "/tmp/perf.data"], stdin=DEVNULL, stdout=PIPE, stderr=DEVNULL)
+            stackcollapse_process = Popen(["sudo", "scripts/stackcollapse-perf.pl"], stdin=perf_process.stdout, stdout=PIPE, stderr=DEVNULL)
+            stacks_output = stackcollapse_process.stdout.read().decode()
+            stacks = [parse_stack(line) for line in stacks_output.strip().splitlines()]
+            total = sum(v for _, v in stacks)
+            active = sum(v for k, v in stacks if "spdk_bdev_" in k or "kv_" in k)
+            perf = active / total
+        else:
+            perf = 0.0
+
         results = []
         op_cnt = workload_to_op_cnt[workload]
         for client_process in client_processes:
@@ -102,13 +121,14 @@ class ClientManager:
             else:
                 hr = 0
                 ssd_iops = (2 * n_get + 3 * (op_cnt - n_get)) / op_cnt * qps
-            results.append(Result(avg_lat=avg_lat, qps=qps, hr=hr, ssd_iops=ssd_iops))
+            results.append(Result(avg_lat=avg_lat, qps=qps, hr=hr, ssd_iops=ssd_iops, perf=0.0))
         sleep(20)
         return Result(
             avg_lat=sum(result.avg_lat for result in results) / len(results),
             qps=sum(result.qps for result in results),
             hr=sum(result.hr for result in results) / len(results),
             ssd_iops=sum(result.ssd_iops for result in results),
+            perf=perf,
         )
 
     def stop_all(self):

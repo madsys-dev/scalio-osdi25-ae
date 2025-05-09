@@ -15,8 +15,8 @@ if current_dir != REQUIRED_DIR:
 
 class ServerManager:
     def __init__(self):
-        self.server_process = None
-        self.ditto_process = None
+        self.server_process: Popen | None = None
+        self.ditto_process: Popen | None = None
 
     def run(self, num_ssd: int, system: str, n_cores: int = 8, n_slots: int = 8, set_batch: int = 8):
         os.system("pkill init")

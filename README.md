@@ -16,6 +16,7 @@ This is the repository for the paper *Scalio: Scaling up DPU-based JBOF Key-valu
 
 - etcd
 - Memcached
+- perf
 - Ubuntu libraries: libaio-dev libcunit1-dev libmemcached-dev libgtest-dev libboost-all-dev uuid-dev libssl-dev libibverbs-dev librdmacm-dev
 - Python packages: fabric matplotlib numpy python-memcached
 - Ensure that hugepages are enabled on all nodes (`echo 10240 > /proc/sys/vm/nr_hugepages`)
@@ -65,12 +66,14 @@ For scripts that generate several sub-figures, you may manually modify the `for 
 
 If the problem persists, please contact us to assist with resetting the environment.
 
-| Figure    | Script          | Output files       | Estimated time |
-| --------- | --------------- | ------------------ | -------------- |
-| Figure 11 | 6-2.py          | 6-2-*.pdf          | 8 hours        |
-| Figure 13 | 6-3.py          | 6-3.pdf            | 1 hour         |
-| Figure 14 | 6-4.py          | 6-4-*.pdf          | 4 hours        |
-| Figure 15 | 6-5-skewness.py | 6-5-skewness-*.pdf | 40 minutes     |
-| Figure 16 | 6-5-dataset.py  | 6-5-dataset-*.pdf  | 4 hours        |
-| Figure 17 | 6-5-cores.py    | 6-5-cores-*.pdf    | 1.5 hours      |
-| Figure 18 | 6-5-slots.py    | 6-5-slots-*.pdf    | 40 minutes     |
+| Figure    | Script          | Output files       | Estimated time           |
+| --------- | --------------- | ------------------ | ------------------------ |
+| Figure 2  | 6-2.py          | 6-2-**c**.pdf      | Same script as Figure 11 |
+| Figure 5  | 2-1.py          | 2-1.pdf            | 40 minutes               |
+| Figure 11 | 6-2.py          | 6-2-*.pdf          | 8 hours                  |
+| Figure 13 | 6-3.py          | 6-3.pdf            | 1 hour                   |
+| Figure 14 | 6-4.py          | 6-4-*.pdf          | 4 hours                  |
+| Figure 15 | 6-5-skewness.py | 6-5-skewness-*.pdf | 40 minutes               |
+| Figure 16 | 6-5-dataset.py  | 6-5-dataset-*.pdf  | 4 hours                  |
+| Figure 17 | 6-5-cores.py    | 6-5-cores-*.pdf    | 1.5 hours                |
+| Figure 18 | 6-5-slots.py    | 6-5-slots-*.pdf    | 40 minutes               |
