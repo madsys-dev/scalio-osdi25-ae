@@ -1,5 +1,7 @@
+import json
 import invoke
 import os
+import psutil
 import re
 from dataclasses import dataclass
 from subprocess import Popen, DEVNULL, PIPE
@@ -36,6 +38,12 @@ class Result:
     hr: float
     ssd_iops: float
     perf: float
+
+@dataclass
+class FIOResult:
+    standard: float
+    offload: float
+    kworker_cpu: float
 
 def parse_stack(line: str):
     last_space = line.rfind(" ")
@@ -143,3 +151,50 @@ class ClientManager:
             except invoke.exceptions.UnexpectedExit:
                 pass
         os.system("pkill -f controller.py && pkill init")
+
+    def fio(self, num_ssd: int) -> FIOResult:
+        client = self.clients[0]
+        nvme_list = json.loads(client.run(f"sudo nvme list -o json", asynchronous=True).join().stdout)
+        standard_devices = []
+        offload_devices = []
+        for device in nvme_list["Devices"]:
+            if device["ModelNumber"] == "Linux":
+                if 10 <= device["NameSpace"] < 20:
+                    offload_devices.append(device["DevicePath"])
+                elif 20 <= device["NameSpace"] < 30:
+                    standard_devices.append(device["DevicePath"])
+
+        fio_cmd = "sudo fio"
+        for device in standard_devices[:num_ssd]:
+            fio_cmd += f" --name=test --filename={device} --numjobs=1 --ioengine=libaio --direct=1 --rw=read --bs=512 --runtime=20 --iodepth=32 --output-format=json"
+        fio_process = client.run(fio_cmd, asynchronous=True)
+
+        sleep(5)
+        for proc in psutil.process_iter(["pid", "name"]):
+            if proc.info["name"] and "kworker" in proc.info["name"]:
+                try:
+                    proc.cpu_percent(interval=None)
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+        sleep(1)
+        kworker_cpu = 0
+        for proc in psutil.process_iter(["pid", "name"]):
+            if proc.info["name"] and "kworker" in proc.info["name"]:
+                try:
+                    kworker_cpu += proc.cpu_percent(interval=None)
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+
+        fio_result = json.loads(fio_process.join().stdout)
+        standard = sum(job["read"]["iops"] for job in fio_result["jobs"])
+
+        fio_cmd = "sudo fio"
+        for device in offload_devices[:num_ssd]:
+            fio_cmd += f" --name=test --filename={device} --numjobs=1 --ioengine=libaio --direct=1 --rw=read --bs=512 --runtime=20 --iodepth=32 --output-format=json"
+        fio_result = json.loads(client.run(fio_cmd, asynchronous=True).join().stdout)
+        offload = sum(job["read"]["iops"] for job in fio_result["jobs"])
+        return FIOResult(
+            standard=standard,
+            offload=offload,
+            kworker_cpu=kworker_cpu,
+        )
