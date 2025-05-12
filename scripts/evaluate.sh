@@ -117,6 +117,7 @@ handle_timeout_pid() {
 main() {
     scripts=(
         "scripts/2-1.py"
+        "scripts/2-2.py"
         "scripts/6-2.py"
         "scripts/6-3.py"
         "scripts/6-4.py"
