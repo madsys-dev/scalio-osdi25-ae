@@ -17,7 +17,8 @@ updateproportion=0.5
 scanproportion=0
 insertproportion=0
 
-requestdistribution=uniform
+requestdistribution=zipfian
+zipfianconstant=0.99
 
 recordcount=20000000
 operationcount=8000000
