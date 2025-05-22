@@ -3,7 +3,7 @@
 # This script was written with the assistance of ChatGPT.
 
 # Retry parameters
-MAX_RETRIES=5  # Changed MAX_RETRIES to 5
+MAX_RETRIES=10  # Changed MAX_RETRIES to 10
 RETRY_DELAY=10  # Seconds between retries
 
 # Run stop-the-world.py at the very beginning to clear the environment
