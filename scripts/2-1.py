@@ -31,7 +31,7 @@ fig, ax1 = plt.subplots(figsize=(10, 6))
 ax2 = ax1.twinx()
 
 ax1.bar(x, qps, width=0.2, label="Throughput")
-ax2.plot(x, cpu, label="CPU usage for SSD I/O")
+ax2.plot(x, cpu, color="red", label="CPU usage for SSD I/O", marker='o')
 
 ax1.set_xticks(x)
 

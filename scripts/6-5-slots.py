@@ -32,17 +32,22 @@ for workload in ["a", "b", "c", "d", "f"]:
     bar_width = 0.2
     ax1.bar(x, qps, width=bar_width, label="Throughput")
 
+    qps_array = np.array(qps)
+    margin = (qps_array.max() - qps_array.min()) * 0.05
+    ax1.set_ylim(qps_array.min() - 10 * margin, qps_array.max() + margin)
+
     ax2 = ax1.twinx()
-    ax2.plot(x, hr, label="Hit ratio")
+    ax2.plot(x, hr, label="Hit ratio", marker='o', markersize=6, markeredgecolor='black')
 
     ax1.set_xticks(x)
     ax1.set_xticklabels(map(str, slots_range))
 
-    ax2.set_ylim(0, 1)
-
     bars_labels, bars_handles = ax1.get_legend_handles_labels()
     lines_labels, lines_handles = ax2.get_legend_handles_labels()
-    ax1.legend(bars_labels + lines_labels, bars_handles + lines_handles, loc='upper left')
+    ax1.legend(bars_labels + lines_labels, bars_handles + lines_handles, loc='upper left', ncol=2)
+
+    ax1.set_ylabel("Throughput")
+    ax2.set_ylabel("Hit Ratio")
 
     # Grid on primary y-axis
     ax1.grid(axis='y', linestyle='--', alpha=0.7)

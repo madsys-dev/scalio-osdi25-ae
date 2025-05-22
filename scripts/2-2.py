@@ -31,7 +31,7 @@ bar_width = 0.2
 npx = np.arange(1, 8)
 ax1.bar(npx - 0.5 * bar_width, standard, width=bar_width, label="Standard")
 ax1.bar(npx + 0.5 * bar_width, offload, width=bar_width, label="Offload")
-ax2.plot(x, kworker_cpu, label="CPU usage")
+ax2.plot(x, kworker_cpu, color='red', label="CPU usage", marker='o')
 
 ax1.set_xticks(x)
 

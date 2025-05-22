@@ -12,7 +12,7 @@ server_manager = ServerManager()
 
 x = range(1, 8)
 
-system_names = ["leed", "ditto", "scalio"]
+system_names = ["scalio", "ditto", "leed"]
 
 for workload in ["a", "b", "c", "d", "f"]:
     if os.path.exists(f"figs/6-2-{workload}.pdf"):
@@ -31,14 +31,20 @@ for workload in ["a", "b", "c", "d", "f"]:
             server_manager.kill()
 
     for system in system_names:
-        ax1.plot(x, qps[system], label=system)
-        ax2.plot(x, ssd_iops[system], label=system)
+        if system == "leed":
+            color = "brown"
+        elif system == "ditto":
+            color = "red"
+        else:
+            color = "blue"
+        ax1.plot(x, qps[system], color=color, label=system, marker='o')
+        ax2.plot(x, ssd_iops[system], color=color, label=system, marker='o')
 
     ax1.grid(True)
     ax2.grid(True)
 
-    ax1.legend()
-    ax2.legend()
+    ax1.legend(ncol=3)
+    ax2.legend(ncol=3)
 
     plt.xlabel("#SSD")
 

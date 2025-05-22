@@ -15,7 +15,7 @@ for workload in ["a", "b", "c", "d", "f"]:
     if os.path.exists(f"figs/6-4-{workload}.pdf"):
         continue
     plt.figure(figsize=(8, 5))
-    for (system, batch) in [("ditto", False), ("scalio", True), ("scalio", False)]:
+    for (system, batch, color, label) in [("scalio", True, "blue", "Scalio w/ batched write"), ("scalio", False, "red", "Scalio w/o batched write"), ("ditto", False, "brown", "LEED+Ditto")]:
 
         x = []
         y = []
@@ -26,7 +26,7 @@ for workload in ["a", "b", "c", "d", "f"]:
             x.append(result.qps)
             y.append(result.avg_lat)
             server_manager.kill()
-        plt.plot(x, y, label=f"{system} (batch = {batch})")
+        plt.plot(x, y, color=color, label=label)
     plt.xlabel('Throughput')
     plt.ylabel('Avg latency')
     plt.title('Latency to throughput by varying the number of concurrent I/O queues.')
