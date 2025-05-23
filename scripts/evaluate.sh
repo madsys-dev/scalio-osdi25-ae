@@ -118,13 +118,13 @@ main() {
     scripts=(
         "scripts/2-1.py"
         "scripts/2-2.py"
-        "scripts/6-2.py"
         "scripts/6-3.py"
-        "scripts/6-4.py"
         "scripts/6-5-skewness.py"
-        "scripts/6-5-dataset.py"
         "scripts/6-5-cores.py"
         "scripts/6-5-slots.py"
+        "scripts/6-2.py"
+        "scripts/6-4.py"
+        "scripts/6-5-dataset.py"
     )
 
     # Iterate through each script

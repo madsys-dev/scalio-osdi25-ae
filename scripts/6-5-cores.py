@@ -24,7 +24,7 @@ for workload in ["a", "b", "c", "d", "f"]:
         for n_cores in cores_range:
             logger.info(f"Testing workload = {workload}, system = {system}, n_cores = {n_cores}")
             server_manager.run(7, system, n_cores=n_cores)
-            result = client_manager.run(workload, 7, system, True)
+            result = client_manager.run(workload, 7, system, True, io=64 * n_cores)
             qps.append(result.qps)
             server_manager.kill()
 

@@ -26,7 +26,7 @@ for workload in ["a", "b", "c", "d", "f"]:
             x.append(result.qps)
             y.append(result.avg_lat)
             server_manager.kill()
-        plt.plot(x, y, color=color, label=label)
+        plt.plot(x, y, color=color, label=label, marker='o')
     plt.xlabel('Throughput')
     plt.ylabel('Avg latency')
     plt.title('Latency to throughput by varying the number of concurrent I/O queues.')
